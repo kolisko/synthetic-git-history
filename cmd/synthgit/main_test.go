@@ -118,10 +118,6 @@ func setTestConfigHome(t *testing.T, configHome string) string {
 	case "windows":
 		t.Setenv("AppData", configHome)
 		return configHome
-	case "darwin":
-		home := t.TempDir()
-		t.Setenv("HOME", home)
-		return filepath.Join(home, "Library", "Application Support")
 	default:
 		t.Setenv("XDG_CONFIG_HOME", configHome)
 		return configHome

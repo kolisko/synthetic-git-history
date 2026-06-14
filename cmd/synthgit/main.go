@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/kolisko/synthetic-git-history/internal/config"
@@ -189,9 +190,22 @@ func loadConfig(path string) (config.Config, error) {
 }
 
 func defaultConfigPath() (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve user config directory: %w", err)
+	var configDir string
+	if runtime.GOOS == "windows" {
+		var err error
+		configDir, err = os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve user config directory: %w", err)
+		}
+	} else {
+		configDir = os.Getenv("XDG_CONFIG_HOME")
+		if configDir == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", fmt.Errorf("resolve home directory: %w", err)
+			}
+			configDir = filepath.Join(home, ".config")
+		}
 	}
 	return filepath.Join(configDir, appName, configFileName), nil
 }

@@ -74,10 +74,10 @@ synthgit init-config
 
 Writes a starter JSON config to the default user config directory, prints the created config, and explains where to edit it.
 
-The default config path is platform-specific and is resolved with the operating system's user config directory:
+The default config path follows the XDG-style config directory on macOS and Linux:
 
 - Linux: `$XDG_CONFIG_HOME/synthgit/config.json` or `~/.config/synthgit/config.json`
-- macOS: `~/Library/Application Support/synthgit/config.json`
+- macOS: `$XDG_CONFIG_HOME/synthgit/config.json` or `~/.config/synthgit/config.json`
 - Windows: `%AppData%\synthgit\config.json`
 
 ```bash
