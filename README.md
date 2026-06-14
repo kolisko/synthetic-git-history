@@ -86,6 +86,24 @@ synthgit init-config --output ./synthgit.config.json
 
 Writes the starter config to a custom path instead.
 
+## macOS Gatekeeper
+
+The macOS release binaries are unsigned and not notarized. If you download a macOS binary in a browser, macOS may attach a quarantine attribute and the terminal can show only:
+
+```text
+zsh: killed
+```
+
+Remove the quarantine attribute once after download:
+
+```bash
+xattr -d com.apple.quarantine ./synthgit-v0.1.3-darwin-arm64
+chmod +x ./synthgit-v0.1.3-darwin-arm64
+./synthgit-v0.1.3-darwin-arm64 help
+```
+
+Use `synthgit-v0.1.3-darwin-amd64` instead on Intel Macs.
+
 ## Configuration
 
 See [config.example.json](config.example.json).
