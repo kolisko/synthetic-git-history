@@ -40,3 +40,42 @@ func TestRejectsAbsoluteActivityFile(t *testing.T) {
 		t.Fatal("expected error for absolute activity_file")
 	}
 }
+
+func TestRelativeRepositoryPathUsesWorkingDirectory(t *testing.T) {
+	configDir := t.TempDir()
+	workDir := t.TempDir()
+	configPath := filepath.Join(configDir, "config.json")
+	content := `{
+  "repository": {"path": "./repo"},
+  "identity": {"name": "Bot", "email": "bot@example.invalid"},
+  "range": {"start": "2020-01-01", "end": "2020-01-01"},
+  "content": {"message_templates": ["test"]}
+}`
+
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	previousDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(previousDir); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := filepath.Join(workDir, "repo")
+	if cfg.Repository.Path != want {
+		t.Fatalf("repository.path = %q, want %q", cfg.Repository.Path, want)
+	}
+}

@@ -15,12 +15,15 @@ import (
 const usage = `synthgit generates synthetic Git commit histories for test repositories.
 
 Usage:
-  synthgit plan [--config ~/.synthgit.config.json]
-  synthgit generate [--config ~/.synthgit.config.json] [--dry-run] [--push]
-  synthgit init-config [--output ~/.synthgit.config.json]
+  synthgit plan [--config <path>]
+  synthgit generate [--config <path>] [--dry-run] [--push]
+  synthgit init-config [--output <path>]
 `
 
-const defaultConfigPath = "~/.synthgit.config.json"
+const (
+	appName        = "synthgit"
+	configFileName = "config.json"
+)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -51,9 +54,14 @@ func run(args []string) error {
 }
 
 func runPlan(args []string) error {
+	defaultPath, err := defaultConfigPath()
+	if err != nil {
+		return err
+	}
+
 	fs := flag.NewFlagSet("plan", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	configPath := fs.String("config", defaultConfigPath, "Path to JSON config file.")
+	configPath := fs.String("config", defaultPath, "Path to JSON config file.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -68,9 +76,14 @@ func runPlan(args []string) error {
 }
 
 func runGenerate(args []string) error {
+	defaultPath, err := defaultConfigPath()
+	if err != nil {
+		return err
+	}
+
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	configPath := fs.String("config", defaultConfigPath, "Path to JSON config file.")
+	configPath := fs.String("config", defaultPath, "Path to JSON config file.")
 	dryRun := fs.Bool("dry-run", false, "Print the schedule without changing files.")
 	pushRequested := fs.Bool("push", false, "Push after generation when config also allows it.")
 	if err := fs.Parse(args); err != nil {
@@ -115,9 +128,14 @@ func runGenerate(args []string) error {
 }
 
 func runInitConfig(args []string) error {
+	defaultPath, err := defaultConfigPath()
+	if err != nil {
+		return err
+	}
+
 	fs := flag.NewFlagSet("init-config", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	output := fs.String("output", defaultConfigPath, "Output config path.")
+	output := fs.String("output", defaultPath, "Output config path.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -146,7 +164,7 @@ func runInitConfig(args []string) error {
 }
 
 func printNextSteps(outputPath string) {
-	defaultPath, err := resolveOutputPath(defaultConfigPath)
+	defaultPath, err := defaultConfigPath()
 	if err == nil && outputPath == defaultPath {
 		fmt.Printf("Then run:\n  synthgit plan\n  synthgit generate\n")
 		return
@@ -168,6 +186,14 @@ func loadConfig(path string) (config.Config, error) {
 		return config.Config{}, err
 	}
 	return cfg, nil
+}
+
+func defaultConfigPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user config directory: %w", err)
+	}
+	return filepath.Join(configDir, appName, configFileName), nil
 }
 
 func resolveOutputPath(path string) (string, error) {

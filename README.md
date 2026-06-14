@@ -42,13 +42,13 @@ go build -o synthgit ./cmd/synthgit
 synthgit plan
 ```
 
-Prints the generated schedule from `~/.synthgit.config.json` without touching a repository.
+Prints the generated schedule from the default config file without touching a repository.
 
 ```bash
 synthgit generate
 ```
 
-Creates commits locally according to `~/.synthgit.config.json`.
+Creates commits locally according to the default config file.
 
 ```bash
 synthgit plan --config ./config.example.json
@@ -72,7 +72,13 @@ Pushes after generation only when `repository.push` is `true` and `repository.re
 synthgit init-config
 ```
 
-Writes a starter JSON config to `~/.synthgit.config.json`, prints the created config, and explains where to edit it.
+Writes a starter JSON config to the default user config directory, prints the created config, and explains where to edit it.
+
+The default config path is platform-specific and is resolved with the operating system's user config directory:
+
+- Linux: `$XDG_CONFIG_HOME/synthgit/config.json` or `~/.config/synthgit/config.json`
+- macOS: `~/Library/Application Support/synthgit/config.json`
+- Windows: `%AppData%\synthgit\config.json`
 
 ```bash
 synthgit init-config --output ./synthgit.config.json
@@ -86,7 +92,7 @@ See [config.example.json](config.example.json).
 
 Important fields:
 
-- `repository.path`: target repository path.
+- `repository.path`: target repository path; relative paths are resolved from the directory where you run `synthgit`.
 - `repository.init`: initialize the repository when it does not exist.
 - `repository.branch`: branch to create/use.
 - `repository.push`: allows pushing when the CLI also receives `--push`.

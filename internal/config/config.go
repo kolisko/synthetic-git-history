@@ -75,7 +75,11 @@ func Load(path string) (Config, error) {
 	}
 
 	if strings.TrimSpace(cfg.Repository.Path) != "" && !filepath.IsAbs(cfg.Repository.Path) {
-		cfg.Repository.Path = filepath.Join(filepath.Dir(path), cfg.Repository.Path)
+		absoluteRepoPath, err := filepath.Abs(cfg.Repository.Path)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.Repository.Path = absoluteRepoPath
 	}
 
 	if err := hydrate(&cfg); err != nil {

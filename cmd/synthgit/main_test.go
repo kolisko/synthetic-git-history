@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -49,25 +50,28 @@ func TestInitConfigRefusesToOverwriteExistingFile(t *testing.T) {
 	}
 }
 
-func TestResolveOutputPathUsesHomeForDefaultConfig(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+func TestDefaultConfigPathUsesUserConfigDir(t *testing.T) {
+	configHome := t.TempDir()
+	wantBase := setTestConfigHome(t, configHome)
 
-	path, err := resolveOutputPath("~/.synthgit.config.json")
+	path, err := defaultConfigPath()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := filepath.Join(home, ".synthgit.config.json")
+	want := filepath.Join(wantBase, "synthgit", "config.json")
 	if path != want {
 		t.Fatalf("path = %q, want %q", path, want)
 	}
 }
 
-func TestPlanUsesDefaultHomeConfig(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	configPath := filepath.Join(home, ".synthgit.config.json")
+func TestPlanUsesDefaultConfig(t *testing.T) {
+	configHome := t.TempDir()
+	wantBase := setTestConfigHome(t, configHome)
+	configPath := filepath.Join(wantBase, "synthgit", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(configPath, []byte(`{
   "repository": {"path": "./repo", "init": true},
   "identity": {"name": "Bot", "email": "bot@example.invalid"},
@@ -90,8 +94,8 @@ func TestPlanUsesDefaultHomeConfig(t *testing.T) {
 }
 
 func TestInitConfigDefaultOutputPrintsSimpleNextSteps(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	configHome := t.TempDir()
+	wantBase := setTestConfigHome(t, configHome)
 
 	output := captureStdout(t, func() {
 		if err := run([]string{"init-config"}); err != nil {
@@ -99,11 +103,28 @@ func TestInitConfigDefaultOutputPrintsSimpleNextSteps(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "Created config: "+filepath.Join(home, ".synthgit.config.json")) {
+	if !strings.Contains(output, "Created config: "+filepath.Join(wantBase, "synthgit", "config.json")) {
 		t.Fatalf("expected default config path, got:\n%s", output)
 	}
 	if !strings.Contains(output, "Then run:\n  synthgit plan\n  synthgit generate") {
 		t.Fatalf("expected simple next steps for default config, got:\n%s", output)
+	}
+}
+
+func setTestConfigHome(t *testing.T, configHome string) string {
+	t.Helper()
+
+	switch runtime.GOOS {
+	case "windows":
+		t.Setenv("AppData", configHome)
+		return configHome
+	case "darwin":
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		return filepath.Join(home, "Library", "Application Support")
+	default:
+		t.Setenv("XDG_CONFIG_HOME", configHome)
+		return configHome
 	}
 }
 
