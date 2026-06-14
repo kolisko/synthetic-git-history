@@ -2,6 +2,5 @@ __pycache__/
 *.py[cod]
 synthetic-history-repo/
 dist/
-synthgit
-synthgit.exe
-
+/synthgit
+/synthgit.exe
