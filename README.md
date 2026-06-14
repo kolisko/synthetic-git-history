@@ -1,6 +1,11 @@
 # Synthetic Git History
 
-Synthetic Git History is a small, dependency-free CLI for generating configurable Git commit histories in test repositories. It is intended for testing GitHub, Git hosting, analytics, CI, reporting, and import integrations that need realistic commit timelines.
+Synthetic Git History is a small Go CLI for generating configurable synthetic Git commit histories in test repositories. It is intended for testing GitHub, Git hosting, analytics, CI, reporting, and import integrations that need realistic commit timelines.
+
+Runtime requirements:
+
+- `git`
+- no Python, Node, pip, npm, or external runtime
 
 The default workflow is local and explicit:
 
@@ -8,70 +13,75 @@ The default workflow is local and explicit:
 - commit dates can be backdated for test ranges,
 - output is deterministic when `seed` is set,
 - push is disabled unless `--push` and config push settings are both enabled,
-- dirty repositories are rejected unless `allow_dirty = true`.
+- dirty repositories are rejected unless `allow_dirty` is `true`.
 
 Use this only in repositories that are clearly synthetic or dedicated to testing.
 
 ## Quick Start
 
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
+From a release binary:
 
-synthgit plan --config config.example.toml
-synthgit generate --config config.example.toml
+```bash
+synthgit plan --config config.example.json
+synthgit generate --config config.example.json
 ```
 
-Without installation:
+From source:
 
 ```bash
-PYTHONPATH=src python3 -m synthgit plan --config config.example.toml
-PYTHONPATH=src python3 -m synthgit generate --config config.example.toml
+go build -o synthgit ./cmd/synthgit
+./synthgit plan --config config.example.json
+./synthgit generate --config config.example.json
 ```
 
 ## Commands
 
 ```bash
-synthgit plan --config config.example.toml
+synthgit plan --config config.example.json
 ```
 
 Prints the generated schedule without touching a repository.
 
 ```bash
-synthgit generate --config config.example.toml
+synthgit generate --config config.example.json
 ```
 
 Creates commits locally according to the config.
 
 ```bash
-synthgit generate --config config.example.toml --dry-run
+synthgit generate --config config.example.json --dry-run
 ```
 
 Shows what would be committed without changing files.
 
 ```bash
-synthgit generate --config config.example.toml --push
+synthgit generate --config config.example.json --push
 ```
 
-Pushes after generation only when `[repository].push = true` and `[repository].remote` is configured.
+Pushes after generation only when `repository.push` is `true` and `repository.remote` is configured.
+
+```bash
+synthgit init-config --output synthgit.config.json
+```
+
+Writes a starter JSON config.
 
 ## Configuration
 
-See [config.example.toml](config.example.toml).
+See [config.example.json](config.example.json).
 
 Important fields:
 
-- `[repository].path`: target repository path.
-- `[repository].init`: initialize the repository when it does not exist.
-- `[repository].branch`: branch to create/use.
-- `[repository].push`: allows pushing when the CLI also receives `--push`.
-- `[range].start` / `[range].end`: inclusive synthetic commit date range.
-- `[volume].min_commits_per_day` / `[volume].max_commits_per_day`: daily volume bounds.
-- `[volume].active_day_probability`: probability that a day receives commits.
-- `[volume].weekend_multiplier`: lowers or raises weekend activity.
-- `[identity]`: author/committer identity used for generated commits.
-- `[content].message_templates`: commit message templates.
+- `repository.path`: target repository path.
+- `repository.init`: initialize the repository when it does not exist.
+- `repository.branch`: branch to create/use.
+- `repository.push`: allows pushing when the CLI also receives `--push`.
+- `range.start` / `range.end`: inclusive synthetic commit date range.
+- `volume.min_commits_per_day` / `volume.max_commits_per_day`: daily volume bounds.
+- `volume.active_day_probability`: probability that a day receives commits.
+- `volume.weekend_multiplier`: lowers or raises weekend activity.
+- `identity`: author/committer identity used for generated commits.
+- `content.message_templates`: commit message templates.
 
 Template variables:
 
@@ -81,6 +91,23 @@ Template variables:
 - `{daily_total}`: total commits for the day.
 - `{sequence}`: global commit sequence.
 
+## Releases
+
+The release workflow builds binaries for:
+
+- Linux `amd64` and `arm64`
+- macOS `amd64` and `arm64`
+- Windows `amd64`
+
+Create a release by pushing a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+GitHub Actions will attach platform binaries and `.sha256` checksum files to the release.
+
 ## Notes
 
 GitHub contribution graphs and analytics can depend on repository visibility, default branch, email ownership, branch membership, and GitHub-side processing. This tool creates ordinary Git commits with controlled timestamps; it does not attempt to bypass or manipulate GitHub behavior.
@@ -88,5 +115,5 @@ GitHub contribution graphs and analytics can depend on repository visibility, de
 ## Tests
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests
+go test ./...
 ```
