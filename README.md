@@ -22,31 +22,39 @@ Use this only in repositories that are clearly synthetic or dedicated to testing
 From a release binary:
 
 ```bash
-synthgit plan --config config.example.json
-synthgit generate --config config.example.json
+synthgit init-config
+synthgit plan
+synthgit generate
 ```
 
 From source:
 
 ```bash
 go build -o synthgit ./cmd/synthgit
-./synthgit plan --config config.example.json
-./synthgit generate --config config.example.json
+./synthgit init-config
+./synthgit plan
+./synthgit generate
 ```
 
 ## Commands
 
 ```bash
-synthgit plan --config config.example.json
+synthgit plan
 ```
 
-Prints the generated schedule without touching a repository.
+Prints the generated schedule from `~/.synthgit.config.json` without touching a repository.
 
 ```bash
-synthgit generate --config config.example.json
+synthgit generate
 ```
 
-Creates commits locally according to the config.
+Creates commits locally according to `~/.synthgit.config.json`.
+
+```bash
+synthgit plan --config ./config.example.json
+```
+
+Uses a custom config path.
 
 ```bash
 synthgit generate --config config.example.json --dry-run
@@ -61,10 +69,16 @@ synthgit generate --config config.example.json --push
 Pushes after generation only when `repository.push` is `true` and `repository.remote` is configured.
 
 ```bash
-synthgit init-config --output synthgit.config.json
+synthgit init-config
 ```
 
-Writes a starter JSON config.
+Writes a starter JSON config to `~/.synthgit.config.json`, prints the created config, and explains where to edit it.
+
+```bash
+synthgit init-config --output ./synthgit.config.json
+```
+
+Writes the starter config to a custom path instead.
 
 ## Configuration
 

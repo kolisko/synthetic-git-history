@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/kolisko/synthetic-git-history/internal/config"
 	"github.com/kolisko/synthetic-git-history/internal/gitops"
@@ -13,10 +15,12 @@ import (
 const usage = `synthgit generates synthetic Git commit histories for test repositories.
 
 Usage:
-  synthgit plan --config config.example.json
-  synthgit generate --config config.example.json [--dry-run] [--push]
-  synthgit init-config [--output synthgit.config.json]
+  synthgit plan [--config ~/.synthgit.config.json]
+  synthgit generate [--config ~/.synthgit.config.json] [--dry-run] [--push]
+  synthgit init-config [--output ~/.synthgit.config.json]
 `
+
+const defaultConfigPath = "~/.synthgit.config.json"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -49,15 +53,12 @@ func run(args []string) error {
 func runPlan(args []string) error {
 	fs := flag.NewFlagSet("plan", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	configPath := fs.String("config", "", "Path to JSON config file.")
+	configPath := fs.String("config", defaultConfigPath, "Path to JSON config file.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *configPath == "" {
-		return fmt.Errorf("missing --config")
-	}
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		return err
 	}
@@ -69,17 +70,14 @@ func runPlan(args []string) error {
 func runGenerate(args []string) error {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	configPath := fs.String("config", "", "Path to JSON config file.")
+	configPath := fs.String("config", defaultConfigPath, "Path to JSON config file.")
 	dryRun := fs.Bool("dry-run", false, "Print the schedule without changing files.")
 	pushRequested := fs.Bool("push", false, "Push after generation when config also allows it.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *configPath == "" {
-		return fmt.Errorf("missing --config")
-	}
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		return err
 	}
@@ -119,14 +117,81 @@ func runGenerate(args []string) error {
 func runInitConfig(args []string) error {
 	fs := flag.NewFlagSet("init-config", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	output := fs.String("output", "synthgit.config.json", "Output config path.")
+	output := fs.String("output", defaultConfigPath, "Output config path.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if _, err := os.Stat(*output); err == nil {
-		return fmt.Errorf("refusing to overwrite existing file: %s", *output)
+
+	outputPath, err := resolveOutputPath(*output)
+	if err != nil {
+		return err
 	}
-	return os.WriteFile(*output, []byte(config.ExampleJSON), 0644)
+	if _, err := os.Stat(outputPath); err == nil {
+		return fmt.Errorf("refusing to overwrite existing file: %s", outputPath)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(outputPath, []byte(config.ExampleJSON), 0644); err != nil {
+		return err
+	}
+
+	fmt.Printf("Created config: %s\n\n", outputPath)
+	fmt.Print(config.ExampleJSON)
+	fmt.Printf("\nEdit this file to change the target repository, date range, commit volume, identity, and push settings.\n")
+	printNextSteps(outputPath)
+	return nil
+}
+
+func printNextSteps(outputPath string) {
+	defaultPath, err := resolveOutputPath(defaultConfigPath)
+	if err == nil && outputPath == defaultPath {
+		fmt.Printf("Then run:\n  synthgit plan\n  synthgit generate\n")
+		return
+	}
+	fmt.Printf("Then run:\n  synthgit plan --config %s\n  synthgit generate --config %s\n", outputPath, outputPath)
+}
+
+func loadConfig(path string) (config.Config, error) {
+	configPath, err := resolveOutputPath(path)
+	if err != nil {
+		return config.Config{}, err
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return config.Config{}, fmt.Errorf("config file not found: %s\nRun `synthgit init-config` to create one, or pass --config with another path", configPath)
+		}
+		return config.Config{}, err
+	}
+	return cfg, nil
+}
+
+func resolveOutputPath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("output path cannot be empty")
+	}
+
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home directory: %w", err)
+		}
+		if path == "~" {
+			path = home
+		} else {
+			path = filepath.Join(home, strings.TrimPrefix(path, "~/"))
+		}
+	}
+
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return absolute, nil
 }
 
 func printPlan(specs []schedule.CommitSpec) {
