@@ -7,6 +7,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/kolisko/synthetic-git-history/internal/schedule"
 )
 
 func TestInitConfigWritesRequestedFileAndPrintsGuidance(t *testing.T) {
@@ -108,6 +111,23 @@ func TestInitConfigDefaultOutputPrintsSimpleNextSteps(t *testing.T) {
 	}
 	if !strings.Contains(output, "Then run:\n  synthgit plan\n  synthgit generate") {
 		t.Fatalf("expected simple next steps for default config, got:\n%s", output)
+	}
+}
+
+func TestPrintGenerateProgress(t *testing.T) {
+	spec := schedule.CommitSpec{
+		Timestamp: time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC),
+		Timezone:  "+00:00",
+		Message:   "Commit 3",
+	}
+
+	output := captureStdout(t, func() {
+		printGenerateProgress(3, 10, spec)
+	})
+
+	want := "[3/10 30%] created 2020-01-02T03:04:05 +00:00 | Commit 3\n"
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
 	}
 }
 

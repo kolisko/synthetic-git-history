@@ -48,7 +48,7 @@ Prints the generated schedule from the default config file without touching a re
 synthgit generate
 ```
 
-Creates commits locally according to the default config file.
+Creates commits locally according to the default config file and prints progress as commits are created.
 
 ```bash
 synthgit plan --config ./config.example.json

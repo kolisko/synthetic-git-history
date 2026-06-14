@@ -105,10 +105,17 @@ func runGenerate(args []string) error {
 	if err := gitops.EnsureRepository(cfg); err != nil {
 		return err
 	}
-	for _, spec := range specs {
+	total := len(specs)
+	if total == 0 {
+		fmt.Printf("No commits to create in %s\n", cfg.Repository.Path)
+	} else {
+		fmt.Printf("Creating %d commits in %s\n", total, cfg.Repository.Path)
+	}
+	for index, spec := range specs {
 		if err := gitops.ApplyCommit(cfg, spec); err != nil {
 			return err
 		}
+		printGenerateProgress(index+1, total, spec)
 	}
 
 	fmt.Printf("Created %d commits in %s\n", len(specs), cfg.Repository.Path)
@@ -243,4 +250,12 @@ func printPlan(specs []schedule.CommitSpec) {
 		fmt.Printf("%s | %s\n", spec.GitDate(), spec.Message)
 	}
 	fmt.Printf("\nPlanned commits: %d\n", len(specs))
+}
+
+func printGenerateProgress(current, total int, spec schedule.CommitSpec) {
+	if total <= 0 {
+		return
+	}
+	percent := current * 100 / total
+	fmt.Printf("[%d/%d %d%%] created %s | %s\n", current, total, percent, spec.GitDate(), spec.Message)
 }
