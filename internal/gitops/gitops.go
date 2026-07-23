@@ -6,10 +6,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kolisko/synthetic-git-history/internal/config"
 	"github.com/kolisko/synthetic-git-history/internal/schedule"
 )
+
+type History struct {
+	DayCounts   map[string]int
+	CommitCount int
+	FirstDay    time.Time
+	LastDay     time.Time
+}
 
 func EnsureRepository(cfg config.Config) error {
 	repo := cfg.Repository.Path
@@ -81,6 +89,75 @@ func EnsureRepository(cfg config.Config) error {
 	}
 
 	return nil
+}
+
+func ReadHistory(cfg config.Config) (History, error) {
+	history := History{
+		DayCounts: make(map[string]int),
+	}
+
+	info, err := os.Stat(cfg.Repository.Path)
+	if err != nil {
+		if os.IsNotExist(err) && cfg.Repository.Init {
+			return history, nil
+		}
+		return History{}, err
+	}
+	if !info.IsDir() {
+		return History{}, fmt.Errorf("target path is not a directory: %s", cfg.Repository.Path)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.Repository.Path, ".git")); err != nil {
+		if os.IsNotExist(err) && cfg.Repository.Init {
+			return history, nil
+		}
+		return History{}, fmt.Errorf("target path is not a Git repository: %s", cfg.Repository.Path)
+	}
+
+	hasHead, err := hasCommits(cfg.Repository.Path)
+	if err != nil {
+		return History{}, err
+	}
+	if !hasHead {
+		return history, nil
+	}
+
+	ref := "HEAD"
+	exists, err := branchExists(cfg.Repository.Path, cfg.Repository.Branch)
+	if err != nil {
+		return History{}, err
+	}
+	if exists {
+		ref = cfg.Repository.Branch
+	}
+
+	output, err := gitOutput(cfg.Repository.Path, nil, "log", "--format=%aI", ref)
+	if err != nil {
+		return History{}, err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		timestamp, err := time.Parse(time.RFC3339, strings.TrimSpace(line))
+		if err != nil {
+			return History{}, fmt.Errorf("parse Git author date %q: %w", line, err)
+		}
+		day, err := time.Parse("2006-01-02", timestamp.Format("2006-01-02"))
+		if err != nil {
+			return History{}, err
+		}
+		dayKey := day.Format("2006-01-02")
+		history.DayCounts[dayKey]++
+		history.CommitCount++
+		if history.FirstDay.IsZero() || day.Before(history.FirstDay) {
+			history.FirstDay = day
+		}
+		if history.LastDay.IsZero() || day.After(history.LastDay) {
+			history.LastDay = day
+		}
+	}
+
+	return history, nil
 }
 
 func ApplyCommit(cfg config.Config, spec schedule.CommitSpec) error {

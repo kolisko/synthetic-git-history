@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -129,6 +131,130 @@ func TestPrintGenerateProgress(t *testing.T) {
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
+}
+
+func TestFilterMissingDaysKeepsOnlyDaysWithoutExistingCommits(t *testing.T) {
+	specs := []schedule.CommitSpec{
+		{Timestamp: time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)},
+		{Timestamp: time.Date(2026, 1, 2, 9, 0, 0, 0, time.UTC)},
+		{Timestamp: time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC)},
+		{Timestamp: time.Date(2026, 1, 3, 9, 0, 0, 0, time.UTC)},
+	}
+
+	missing := filterMissingDays(specs, map[string]int{
+		"2026-01-01": 2,
+		"2026-01-03": 1,
+	})
+
+	if len(missing) != 2 {
+		t.Fatalf("missing commits = %d, want 2", len(missing))
+	}
+	for _, spec := range missing {
+		if got := spec.Timestamp.Format("2006-01-02"); got != "2026-01-02" {
+			t.Fatalf("unexpected missing day %s", got)
+		}
+	}
+}
+
+func TestFillAddsOnlyMissingActiveDays(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	configPath := filepath.Join(t.TempDir(), "config.json")
+
+	writeFillTestConfig(t, configPath, repo, "2026-01-01", "2026-01-01")
+	captureStdout(t, func() {
+		if err := run([]string{"generate", "--config", configPath}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	writeFillTestConfig(t, configPath, repo, "2026-01-03", "2026-01-03")
+	captureStdout(t, func() {
+		if err := run([]string{"generate", "--config", configPath}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"fill",
+			"--config", configPath,
+			"--from", "2026-01-01",
+			"--to", "2026-01-03",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if !strings.Contains(output, "missing: 1") {
+		t.Fatalf("expected one missing commit, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Created 1 missing commits") {
+		t.Fatalf("expected one created commit, got:\n%s", output)
+	}
+
+	history := gitLog(t, repo, "--format=%ad", "--date=short")
+	counts := make(map[string]int)
+	for _, day := range strings.Fields(history) {
+		counts[day]++
+	}
+	for _, day := range []string{"2026-01-01", "2026-01-02", "2026-01-03"} {
+		if counts[day] != 1 {
+			t.Fatalf("commits on %s = %d, want 1; history:\n%s", day, counts[day], history)
+		}
+	}
+}
+
+func TestFillAfterLastRejectsFrom(t *testing.T) {
+	configHome := t.TempDir()
+	setTestConfigHome(t, configHome)
+
+	err := run([]string{"fill", "--after-last", "--from", "2026-01-01"})
+	if err == nil || !strings.Contains(err.Error(), "--after-last cannot be combined with --from") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func writeFillTestConfig(t *testing.T, path, repo, start, end string) {
+	t.Helper()
+	content := fmt.Sprintf(`{
+  "seed": 42,
+  "repository": {
+    "path": %q,
+    "init": true,
+    "branch": "main",
+    "remote": "",
+    "push": false,
+    "allow_dirty": false
+  },
+  "identity": {"name": "Synthetic Test Bot", "email": "synthetic-test@example.invalid"},
+  "range": {"start": %q, "end": %q, "timezone": "+00:00"},
+  "volume": {
+    "min_commits_per_day": 1,
+    "max_commits_per_day": 1,
+    "active_day_probability": 1,
+    "weekend_multiplier": 1
+  },
+  "time": {"start": "09:00", "end": "17:00"},
+  "content": {
+    "activity_file": "activity.log",
+    "line_template": "{date} {time} synthetic event #{sequence}",
+    "message_templates": ["Commit {date}"]
+  }
+}`, repo, start, end)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func gitLog(t *testing.T, repo string, args ...string) string {
+	t.Helper()
+	commandArgs := append([]string{"-C", repo, "log"}, args...)
+	cmd := exec.Command("git", commandArgs...)
+	bytes, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log failed: %s", strings.TrimSpace(string(bytes)))
+	}
+	return string(bytes)
 }
 
 func setTestConfigHome(t *testing.T, configHome string) string {

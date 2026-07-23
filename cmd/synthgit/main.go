@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/kolisko/synthetic-git-history/internal/config"
 	"github.com/kolisko/synthetic-git-history/internal/gitops"
@@ -18,6 +19,7 @@ const usage = `synthgit generates synthetic Git commit histories for test reposi
 Usage:
   synthgit plan [--config <path>]
   synthgit generate [--config <path>] [--dry-run] [--push]
+  synthgit fill [--config <path>] [--from <date>] [--to <date|today>] [--after-last] [--dry-run] [--push]
   synthgit init-config [--output <path>]
 `
 
@@ -44,6 +46,8 @@ func run(args []string) error {
 		return runPlan(args[1:])
 	case "generate":
 		return runGenerate(args[1:])
+	case "fill":
+		return runFill(args[1:])
 	case "init-config":
 		return runInitConfig(args[1:])
 	case "help", "-h", "--help":
@@ -133,6 +137,159 @@ func runGenerate(args []string) error {
 	}
 
 	return nil
+}
+
+func runFill(args []string) error {
+	defaultPath, err := defaultConfigPath()
+	if err != nil {
+		return err
+	}
+
+	fs := flag.NewFlagSet("fill", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", defaultPath, "Path to JSON config file.")
+	fromRaw := fs.String("from", "", "First day to inspect (YYYY-MM-DD). Defaults to the first commit day.")
+	toRaw := fs.String("to", "today", "Last day to inspect (YYYY-MM-DD or today).")
+	afterLast := fs.Bool("after-last", false, "Only continue after the last existing commit day.")
+	dryRun := fs.Bool("dry-run", false, "Print missing commits without changing files.")
+	pushRequested := fs.Bool("push", false, "Push after generation when config also allows it.")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *afterLast && strings.TrimSpace(*fromRaw) != "" {
+		return fmt.Errorf("--after-last cannot be combined with --from")
+	}
+
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		return err
+	}
+	if !*dryRun {
+		if err := gitops.EnsureRepository(cfg); err != nil {
+			return err
+		}
+	}
+
+	history, err := gitops.ReadHistory(cfg)
+	if err != nil {
+		return err
+	}
+	to, err := parseFillDate(*toRaw, cfg.Range.Timezone)
+	if err != nil {
+		return fmt.Errorf("invalid --to value: %w", err)
+	}
+
+	var from time.Time
+	switch {
+	case *afterLast && !history.LastDay.IsZero():
+		from = history.LastDay.AddDate(0, 0, 1)
+	case *afterLast:
+		from = cfg.Range.Start
+	case strings.TrimSpace(*fromRaw) != "":
+		from, err = parseFillDate(*fromRaw, cfg.Range.Timezone)
+		if err != nil {
+			return fmt.Errorf("invalid --from value: %w", err)
+		}
+	case !history.FirstDay.IsZero():
+		from = history.FirstDay
+	default:
+		from = cfg.Range.Start
+	}
+	if to.Before(from) {
+		return fmt.Errorf("fill end %s is before start %s", to.Format("2006-01-02"), from.Format("2006-01-02"))
+	}
+
+	fillCfg := cfg
+	fillCfg.Range.Start = from
+	fillCfg.Range.End = to
+	fillCfg.Range.StartRaw = from.Format("2006-01-02")
+	fillCfg.Range.EndRaw = to.Format("2006-01-02")
+
+	planned := schedule.Build(fillCfg)
+	specs := filterMissingDays(planned, history.DayCounts)
+	printFillSummary(cfg, history, from, to, planned, specs, *afterLast)
+
+	if *dryRun {
+		printPlan(specs)
+		fmt.Printf("\nDry run: no files changed. Missing commits: %d\n", len(specs))
+		return nil
+	}
+
+	total := len(specs)
+	if total > 0 {
+		fmt.Printf("Creating %d missing commits in %s\n", total, cfg.Repository.Path)
+	}
+	for index, spec := range specs {
+		if err := gitops.ApplyCommit(cfg, spec); err != nil {
+			return err
+		}
+		printGenerateProgress(index+1, total, spec)
+	}
+	fmt.Printf("Created %d missing commits in %s\n", total, cfg.Repository.Path)
+
+	if *pushRequested {
+		if !cfg.Repository.Push {
+			return fmt.Errorf("refusing to push because repository.push is false in config")
+		}
+		if err := gitops.Push(cfg); err != nil {
+			return err
+		}
+		fmt.Printf("Pushed branch %s to origin\n", cfg.Repository.Branch)
+	} else if cfg.Repository.Push {
+		fmt.Println("Config allows push, but CLI --push was not provided. Nothing was pushed.")
+	}
+
+	return nil
+}
+
+func parseFillDate(value, timezone string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "today" {
+		offset, err := time.Parse("-07:00", timezone)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("parse configured timezone: %w", err)
+		}
+		_, seconds := offset.Zone()
+		now := time.Now().In(time.FixedZone(timezone, seconds))
+		return time.Parse("2006-01-02", now.Format("2006-01-02"))
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("use YYYY-MM-DD or today")
+	}
+	return parsed, nil
+}
+
+func filterMissingDays(specs []schedule.CommitSpec, existing map[string]int) []schedule.CommitSpec {
+	missing := make([]schedule.CommitSpec, 0, len(specs))
+	for _, spec := range specs {
+		if existing[spec.Timestamp.Format("2006-01-02")] == 0 {
+			missing = append(missing, spec)
+		}
+	}
+	return missing
+}
+
+func printFillSummary(cfg config.Config, history gitops.History, from, to time.Time, planned, missing []schedule.CommitSpec, afterLast bool) {
+	mode := "fill empty active days"
+	if afterLast {
+		mode = "continue after last commit"
+	}
+	fmt.Printf("Repository: %s\n", cfg.Repository.Path)
+	fmt.Printf("Branch: %s\n", cfg.Repository.Branch)
+	fmt.Printf("Mode: %s\n", mode)
+	fmt.Printf("Range: %s to %s\n", from.Format("2006-01-02"), to.Format("2006-01-02"))
+	if history.CommitCount == 0 {
+		fmt.Println("Existing history: no commits")
+	} else {
+		fmt.Printf(
+			"Existing history: %d commits, %s to %s\n",
+			history.CommitCount,
+			history.FirstDay.Format("2006-01-02"),
+			history.LastDay.Format("2006-01-02"),
+		)
+	}
+	fmt.Printf("Configured schedule: %d commits; missing: %d\n\n", len(planned), len(missing))
 }
 
 func runInitConfig(args []string) error {

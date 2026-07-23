@@ -51,6 +51,30 @@ synthgit generate
 Creates commits locally according to the default config file and prints progress as commits are created.
 
 ```bash
+synthgit fill
+```
+
+Inspects the configured repository and fills empty active days from its earliest commit through today. Existing commits are preserved. Days intentionally left inactive by `active_day_probability`, `skip_weekends`, and `weekend_multiplier` remain empty.
+
+```bash
+synthgit fill --from 2025-01-01 --to 2025-12-31
+```
+
+Fills empty active days only inside an explicit inclusive range. `--to today` is also accepted.
+
+```bash
+synthgit fill --after-last --to 2026-12-31
+```
+
+Continues after the latest existing commit day without inspecting earlier gaps. When the repository has no commits, generation starts at `range.start` from the config.
+
+```bash
+synthgit fill --dry-run
+```
+
+Prints the existing history summary and missing commit schedule without changing the repository. Add `--push` to push after filling; the config must also set `repository.push` to `true`.
+
+```bash
 synthgit plan --config ./config.example.json
 ```
 
@@ -128,6 +152,12 @@ Template variables:
 - `{index}`: commit index within the day.
 - `{daily_total}`: total commits for the day.
 - `{sequence}`: global commit sequence.
+
+## Filling Existing Repositories
+
+`fill` reads author dates from every commit reachable from the configured branch. A day is considered present when at least one existing commit has that author date. It then builds the configured synthetic schedule for the selected range and creates commits only for scheduled days that are completely empty.
+
+The operation does not rewrite or force-push history. When an older gap is filled, the new commit is appended at the branch tip with an older author and committer date. Its displayed date belongs to the gap, but its parent is still the previous branch tip. Inserting commits into the middle of Git ancestry would require rewriting the repository and is intentionally outside the scope of `fill`.
 
 ## Releases
 
