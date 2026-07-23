@@ -48,6 +48,23 @@ jobs:
           GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "${output}" ./cmd/synthgit
           cd dist
           sha256sum "$(basename "${output}")" > "$(basename "${output}").sha256"
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthgit-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
         with:
