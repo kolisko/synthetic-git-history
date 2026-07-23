@@ -49,7 +49,7 @@ jobs:
           cd dist
           sha256sum "$(basename "${output}")" > "$(basename "${output}").sha256"
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: synthgit-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
